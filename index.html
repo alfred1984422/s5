@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>具身視角：代名詞空間雷達 (iPad版)</title>
+    <style>
+        :root {
+            --self-color: #3498db;
+            --you-color: #e67e22;
+            --third-color: #9b59b6;
+            --bg-color: #2c3e50;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            /* 使用 dvh 解決 iOS Safari 網址列遮擋問題 */
+            height: 100dvh; 
+            width: 100vw;
+            overflow: hidden;
+            background-color: var(--bg-color);
+            color: white;
+            /* 禁止選取文字，避免誤觸長按選單 */
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            position: relative;
+        }
+
+        /* 視訊背景 */
+        #video-bg {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            object-fit: cover;
+            opacity: 0.3;
+            z-index: 0;
+            transform: scaleX(-1);
+            display: none;
+        }
+
+        /* UI 主佈局 Grid */
+        .ui-layer {
+            position: relative;
+            z-index: 10;
+            height: 100%;
+            width: 100%;
+            display: grid;
+            /* 左右寬一點，中間窄一點，適配橫屏手持 */
+            grid-template-columns: 1fr 1.5fr 1fr;
+            /* 上中下比例調整，留出空間給手指 */
+            grid-template-rows: 1fr 1fr 1fr;
+            /* 處理 iPad 瀏海與 Home Bar */
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
+            padding-left: env(safe-area-inset-left);
+            padding-right: env(safe-area-inset-right);
+            box-sizing: border-box;
+        }
+
+        /* 題目顯示區 - 絕對定位居中，避免影響 Grid */
+        .question-container {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 20;
+            width: 60%;
+            pointer-events: none; /* 讓點擊穿透 */
+        }
+
+        .question-box {
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            padding: 20px 30px;
+            border-radius: 24px;
+            text-align: center;
+            font-size: 2.2rem; /* iPad 字體加大 */
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            border: 2px solid rgba(255,255,255,0.2);
+            transition: transform 0.3s ease;
+        }
+
+        .highlight {
+            color: #f1c40f;
+            font-weight: 800;
+            text-decoration: underline;
+            text-underline-offset: 6px;
+        }
+
+        /* 觸控區域 */
+        .zone {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            /* 移除 cursor pointer，觸控不需要 */
+            touch-action: manipulation; 
+        }
+
+        /* 移除 hover，改用 active 處理觸控反饋 */
+        .zone:active .avatar {
+            transform: scale(0.9);
+            background: rgba(255,255,255,0.3);
+        }
+
+        .avatar {
+            /* 根據視窗高度自動調整大小，iPad 上更大 */
+            width: 14vh; 
+            height: 14vh;
+            border-radius: 50%;
+            background: #ccc;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 3rem;
+            margin-bottom: 15px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+            border: 5px solid rgba(255,255,255,0.9);
+            transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .label {
+            font-size: 1.5rem;
+            font-weight: 600;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+            background: rgba(0,0,0,0.4);
+            padding: 4px 16px;
+            border-radius: 12px;
+            backdrop-filter: blur(4px);
+        }
+
+        /* --- 位置定義 --- */
+        
+        /* YOU: 上方 */
+        #zone-you {
+            grid-column: 2 / 3;
+            grid-row: 1 / 2;
+            align-self: start;
+            margin-top: 20px;
+        }
+        #zone-you .avatar { background: var(--you-color); }
+
+        /* HE: 左側 */
+        #zone-he {
+            grid-column: 1 / 2;
+            grid-row: 2 / 3;
+            align-self: center;
+            justify-self: start;
+            margin-left: 40px; /* 避免太靠邊緣 */
+        }
+        #zone-he .avatar { background: var(--third-color); }
+
+        /* SHE: 右側 */
+        #zone-she {
+            grid-column: 3 / 4;
+            grid-row: 2 / 3;
+            align-self: center;
+            justify-self: end;
+            margin-right: 40px;
+        }
+        #zone-she .avatar { background: var(--third-color); }
+
+        /* ME: 下方 */
+        #zone-me {
+            grid-column: 2 / 3;
+            grid-row: 3 / 4;
+            align-self: end;
+            margin-bottom: 20px;
+        }
+        #zone-me .avatar { 
+            background: var(--self-color); 
+            width: 16vh; /* 自己最大 */
+            height: 16vh;
+            border-width: 6px;
+        }
+
+        /* 控制與分數列 */
+        .top-bar {
+            position: absolute;
+            top: env(safe-area-inset-top);
+            left: env(safe-area-inset-left);
+            right: env(safe-area-inset-right);
+            display: flex;
+            justify-content: space-between;
+            padding: 20px;
+            z-index: 30;
+            pointer-events: none; /* 讓中間不擋住操作 */
+        }
+
+        .score-pill {
+            background: rgba(255,255,255,0.9);
+            color: #333;
+            padding: 10px 20px;
+            border-radius: 50px;
+            font-weight: bold;
+            font-size: 1.2rem;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+        }
+
+        /* 覆蓋層 */
+        #overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(44, 62, 80, 0.95);
+            z-index: 50;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        
+        .btn-start {
+            background: linear-gradient(135deg, #6dd5fa, #2980b9);
+            color: white;
+            border: none;
+            padding: 20px 40px;
+            font-size: 1.5rem;
+            border-radius: 16px;
+            margin: 10px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+            cursor: pointer; /* 雖然是觸控，但保留作為標示 */
+            transition: transform 0.1s;
+        }
+        .btn-start:active { transform: scale(0.95); }
+        .btn-cam { background: linear-gradient(135deg, #ff7e5f, #feb47b); }
+
+        /* 動畫 */
+        @keyframes pop-green {
+            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.7); }
+            50% { transform: scale(1.2); box-shadow: 0 0 0 30px rgba(46, 204, 113, 0); }
+            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(46, 204, 113, 0); }
+        }
+        
+        @keyframes shake-red {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-10px); }
+            40%, 80% { transform: translateX(10px); }
+        }
+
+        .correct-anim { animation: pop-green 0.6s ease-out; border-color: #2ecc71 !important; background: #2ecc71 !important; color: white; }
+        .wrong-anim { animation: shake-red 0.4s ease-in-out; border-color: #e74c3c !important; }
+
+    </style>
+</head>
+<body>
+
+    <video id="video-bg" autoplay muted playsinline></video>
+
+    <div class="top-bar">
+        <div class="score-pill" id="score">Score: 0</div>
+        </div>
+
+    <div id="overlay">
+        <h1 style="font-size: 3rem; margin-bottom: 20px;">👤 代名詞空間雷達</h1>
+        <p style="font-size: 1.4rem; color: #ddd; max-width: 700px; text-align: center; margin-bottom: 40px;">
+            請像拿著雷達一樣雙手握持 iPad。<br>
+            當句子出現時，用手指點擊對應的方向。
+        </p>
+        <div>
+            <button class="btn-start" onclick="startGame(false)">🚀 普通模式</button>
+            <button class="btn-start btn-cam" onclick="startGame(true)">📸 實境模式</button>
+        </div>
+        <p style="margin-top:20px; color:#aaa; font-size: 1rem;">實境模式將開啟前置鏡頭，讓你看見「自己」</p>
+    </div>
+
+    <div class="ui-layer">
+        
+        <div class="zone" id="zone-you" onpointerdown="checkAnswer('you')">
+            <div class="avatar">👆</div>
+            <div class="label">You / Yours</div>
+        </div>
+
+        <div class="zone" id="zone-he" onpointerdown="checkAnswer('he')">
+            <div class="avatar">👈</div>
+            <div class="label">He / Him</div>
+        </div>
+
+        <div class="zone" id="zone-she" onpointerdown="checkAnswer('she')">
+            <div class="avatar">👉</div>
+            <div class="label">She / Her</div>
+        </div>
+
+        <div class="zone" id="zone-me" onpointerdown="checkAnswer('me')">
+            <div class="avatar">👇</div>
+            <div class="label">I / Me / My</div>
+        </div>
+
+    </div>
+
+    <div class="question-container">
+        <div class="question-box">
+            <div id="question-text">Ready?</div>
+            <div id="feedback" style="font-size: 1.2rem; margin-top: 15px; min-height: 1.5em; font-weight: normal; color: #ccc;"></div>
+        </div>
+    </div>
+
+    <script>
+        const questions = [
+            { text: "<span class='highlight'>I</span> am hungry.", target: "me", hint: "I 是主格，代表你自己。" },
+            { text: "Give the book to <span class='highlight'>me</span>.", target: "me", hint: "Me 是受格，回到你自己身上。" },
+            { text: "This is <span class='highlight'>my</span> iPad.", target: "me", hint: "My 是所有格，這東西是你的。" },
+            { text: "I taught <span class='highlight'>myself</span>.", target: "me", hint: "Myself 反身代名詞。" },
+            { text: "Are <span class='highlight'>you</span> ready?", target: "you", hint: "You 是你前方對話的人。" },
+            { text: "Is this <span class='highlight'>your</span> pen?", target: "you", hint: "Your 指對方的東西。" },
+            { text: "I want to help <span class='highlight'>you</span>.", target: "you", hint: "受詞 You，指向前方。" },
+            { text: "<span class='highlight'>He</span> works hard.", target: "he", hint: "He 是旁邊的男生。" },
+            { text: "I saw <span class='highlight'>him</span> running.", target: "he", hint: "Him 是受格，指向男生。" },
+            { text: "That is <span class='highlight'>his</span> bike.", target: "he", hint: "His 是他的東西。" },
+            { text: "<span class='highlight'>She</span> is smart.", target: "she", hint: "She 是旁邊的女生。" },
+            { text: "Tell <span class='highlight'>her</span> hello.", target: "she", hint: "Her 指向女生。" },
+            { text: "The bag is <span class='highlight'>hers</span>.", target: "she", hint: "Hers 是她的。" }
+        ];
+
+        let currentQIndex = 0;
+        let score = 0;
+        let isWaiting = false;
+
+        async function startGame(useCamera) {
+            document.getElementById('overlay').style.display = 'none';
+            
+            if (useCamera) {
+                try {
+                    const video = document.getElementById('video-bg');
+                    // iPad iOS Safari 需要 playsinline 才能在頁面內播放
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        video: { facingMode: "user" }, // 強制使用前置鏡頭
+                        audio: false 
+                    });
+                    video.srcObject = stream;
+                    video.style.display = 'block';
+                    
+                    const meAvatar = document.querySelector('#zone-me .avatar');
+                    meAvatar.style.backgroundColor = 'rgba(52, 152, 219, 0.3)'; // 半透明藍色
+                    meAvatar.style.backdropFilter = 'blur(0px)'; // 清除模糊讓鏡頭清楚一點
+                    meAvatar.innerText = ''; // 移除手指圖示，讓使用者看到自己
+                    meAvatar.style.border = '4px dashed rgba(255,255,255,0.7)';
+                    
+                } catch (err) {
+                    console.error(err);
+                    alert("無法啟動相機 (請確認是否使用 Safari 且允許權限)，將切換至普通模式。");
+                }
+            }
+            nextQuestion();
+        }
+
+        function nextQuestion() {
+            let nextIndex;
+            do {
+                nextIndex = Math.floor(Math.random() * questions.length);
+            } while (nextIndex === currentQIndex && questions.length > 1);
+            
+            currentQIndex = nextIndex;
+            const q = questions[currentQIndex];
+            
+            document.getElementById('question-text').innerHTML = q.text;
+            const fb = document.getElementById('feedback');
+            fb.innerText = "請點擊螢幕上的位置";
+            fb.style.color = "#ccc";
+            
+            document.querySelectorAll('.avatar').forEach(el => {
+                el.classList.remove('correct-anim', 'wrong-anim');
+            });
+            
+            isWaiting = false;
+        }
+
+        // 使用 onpointerdown 取代 onclick 以獲得更快的觸控反應
+        function checkAnswer(zoneId) {
+            if (isWaiting) return;
+
+            const q = questions[currentQIndex];
+            const selectedAvatar = document.querySelector(`#zone-${zoneId} .avatar`);
+            const correctAvatar = document.querySelector(`#zone-${q.target} .avatar`);
+
+            if (zoneId === q.target) {
+                // Correct
+                score += 10;
+                document.getElementById('score').innerText = `Score: ${score}`;
+                
+                const fb = document.getElementById('feedback');
+                fb.innerText = `✅ Correct! ${q.hint}`;
+                fb.style.color = "#2ecc71";
+                
+                selectedAvatar.classList.add('correct-anim');
+                isWaiting = true;
+                setTimeout(nextQuestion, 1800);
+            } else {
+                // Wrong
+                const fb = document.getElementById('feedback');
+                fb.innerText = `❌ Oops! 再試試看。`;
+                fb.style.color = "#e74c3c";
+                
+                selectedAvatar.classList.add('wrong-anim');
+                
+                // 移除錯誤動畫 class 以便下次觸發
+                setTimeout(() => selectedAvatar.classList.remove('wrong-anim'), 500);
+
+                // 提示正確答案
+                setTimeout(() => {
+                    correctAvatar.style.transform = "scale(1.15)";
+                    correctAvatar.style.boxShadow = "0 0 20px #f1c40f";
+                    setTimeout(() => {
+                        correctAvatar.style.transform = "";
+                        correctAvatar.style.boxShadow = "";
+                    }, 400);
+                }, 400);
+            }
+        }
+    </script>
+</body>
+</html>
